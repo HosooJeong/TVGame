@@ -846,13 +846,20 @@
             });
 
             mediaConnection.on('close', () => {
-                console.log('[Phone] 미디어 연결 종료');
-                handleDisconnection();
+                console.log('[Phone] 미디어 연결 종료됨');
+                // TV에서 정상적으로 수신 중일 수 있으므로 바로 재연결하지 않음
+                // handleDisconnection();
             });
 
             mediaConnection.on('error', (error) => {
                 console.error('[Phone] 미디어 연결 에러:', error);
-                handleDisconnection();
+                console.error('[Phone] 에러 타입:', error.type);
+                // 심각한 에러일 경우에만 재연결
+                if (error.type === 'network' || error.type === 'server-error') {
+                    handleDisconnection();
+                } else {
+                    console.log('[Phone] 경미한 에러. 재연결하지 않음');
+                }
             });
 
             updateCameraStatus('전송 중', 'streaming');

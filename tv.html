@@ -342,7 +342,21 @@
          * @param {MediaStream} stream - 수신한 미디어 스트림
          */
         function handleIncomingStream(stream) {
+            console.log('[TV] handleIncomingStream 호출됨');
+            console.log('[TV] 스트림 정보:', stream);
+            console.log('[TV] 비디오 트랙 수:', stream.getVideoTracks().length);
+
             videoStream = stream;
+
+            // 비디오 트랙이 있는지 확인
+            const videoTracks = stream.getVideoTracks();
+            if (videoTracks.length === 0) {
+                console.error('[TV] 스트림에 비디오 트랙이 없습니다');
+                updateStatus('비디오 트랙 없음', 'error');
+                return;
+            }
+
+            console.log('[TV] 비디오 트랙 정보:', videoTracks[0].getSettings());
 
             // 숨겨진 비디오 엘리먼트 생성
             const videoElement = document.createElement('video');
@@ -350,14 +364,52 @@
             videoElement.autoplay = true;
             videoElement.playsInline = true;
             videoElement.muted = true;
+            videoElement.style.display = 'none';
+
+            // body에 추가 (일부 브라우저에서 필요)
+            document.body.appendChild(videoElement);
+
+            console.log('[TV] 비디오 엘리먼트 생성 및 스트림 연결 완료');
 
             // 비디오 메타데이터 로드 완료 후 렌더링 시작
             videoElement.onloadedmetadata = () => {
                 console.log('[TV] 비디오 메타데이터 로드 완료');
-                videoElement.play();
-                startCanvasRendering(videoElement);
-                showVideoScreen();
+                console.log('[TV] 비디오 크기:', videoElement.videoWidth, 'x', videoElement.videoHeight);
+
+                // play() 호출
+                videoElement.play()
+                    .then(() => {
+                        console.log('[TV] 비디오 재생 시작 성공');
+                        startCanvasRendering(videoElement);
+                        showVideoScreen();
+                    })
+                    .catch((error) => {
+                        console.error('[TV] 비디오 재생 실패:', error);
+                        updateStatus('비디오 재생 실패', 'error');
+                    });
             };
+
+            // 에러 핸들링
+            videoElement.onerror = (error) => {
+                console.error('[TV] 비디오 엘리먼트 에러:', error);
+                updateStatus('비디오 엘리먼트 에러', 'error');
+            };
+
+            // 타임아웃 - 5초 내에 메타데이터가 로드되지 않으면 강제 시작
+            setTimeout(() => {
+                if (videoElement.readyState < videoElement.HAVE_METADATA) {
+                    console.warn('[TV] 메타데이터 로드 타임아웃. 강제로 재생 시도');
+                    videoElement.play()
+                        .then(() => {
+                            console.log('[TV] 강제 재생 성공');
+                            startCanvasRendering(videoElement);
+                            showVideoScreen();
+                        })
+                        .catch((error) => {
+                            console.error('[TV] 강제 재생 실패:', error);
+                        });
+                }
+            }, 5000);
         }
 
         /**
