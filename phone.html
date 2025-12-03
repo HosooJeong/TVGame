@@ -607,6 +607,12 @@
             previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
             previewCtx.drawImage(segmentationCanvas, 0, 0);
 
+            // 첫 프레임 처리 완료 표시
+            if (!firstFrameProcessed) {
+                firstFrameProcessed = true;
+                console.log('[Phone] 첫 프레임 처리 완료! Canvas에 데이터 있음');
+            }
+
             // 처리 완료
             isProcessing = false;
         }
@@ -775,6 +781,8 @@
         /**
          * 영상 처리 및 전송 시작
          */
+        let firstFrameProcessed = false;
+
         function startVideoProcessingAndStreaming() {
             console.log('[Phone] 영상 처리 시작');
 
@@ -799,7 +807,7 @@
 
             // 카메라 화면으로 전환
             showCameraScreen();
-            updateCameraStatus('처리 중...', 'processing');
+            updateCameraStatus('첫 프레임 처리 중...', 'processing');
 
             // Canvas 초기화 (크기 설정)
             segmentationCanvas.width = cameraVideo.videoWidth;
@@ -815,8 +823,36 @@
 
             // 프레임 처리 루프 시작
             processingActive = true;
+            firstFrameProcessed = false;
             processVideoFrame();
 
+            // MediaPipe가 첫 프레임을 처리할 때까지 대기 후 스트림 전송
+            console.log('[Phone] 첫 프레임 처리 대기 중...');
+
+            const checkFirstFrame = setInterval(() => {
+                if (firstFrameProcessed) {
+                    clearInterval(checkFirstFrame);
+                    console.log('[Phone] 첫 프레임 처리 완료! 스트림 전송 시작');
+
+                    // 이제 Canvas에 데이터가 있으므로 스트림 생성
+                    startStreamingToTV();
+                }
+            }, 100);
+
+            // 타임아웃 - 5초 내에 첫 프레임이 처리되지 않으면 강제 시작
+            setTimeout(() => {
+                if (!firstFrameProcessed) {
+                    console.warn('[Phone] 첫 프레임 처리 타임아웃. 강제 시작');
+                    clearInterval(checkFirstFrame);
+                    startStreamingToTV();
+                }
+            }, 5000);
+        }
+
+        /**
+         * TV로 스트림 전송 시작
+         */
+        function startStreamingToTV() {
             // Canvas 스트림 캡처 및 TV로 전송
             const stream = segmentationCanvas.captureStream(TARGET_FPS);
 
@@ -826,7 +862,10 @@
                 return;
             }
 
-            console.log('[Phone] Canvas 스트림 생성 성공:', stream.getVideoTracks()[0].getSettings());
+            console.log('[Phone] Canvas 스트림 생성 성공');
+            const trackSettings = stream.getVideoTracks()[0].getSettings();
+            console.log('[Phone] 스트림 트랙 정보:', trackSettings);
+            console.log('[Phone] 스트림 크기:', trackSettings.width, 'x', trackSettings.height);
 
             // TV에 미디어 연결 (영상 전송)
             const tvPeerId = `tv-${savedConnectionCode}`;

@@ -409,10 +409,14 @@
             const canvas = displayCanvas;
             const ctx = canvas.getContext('2d', { alpha: false });
 
+            console.log('[TV] startCanvasRendering 호출됨');
+            console.log('[TV] videoElement:', videoElement);
+
             // Canvas를 전체 화면 크기로 설정
             function resizeCanvas() {
                 canvas.width = window.innerWidth;
                 canvas.height = window.innerHeight;
+                console.log('[TV] Canvas 크기 설정:', canvas.width, 'x', canvas.height);
             }
             resizeCanvas();
 
@@ -420,15 +424,42 @@
             window.addEventListener('resize', resizeCanvas);
 
             renderingActive = true;
+            let frameCount = 0;
+            let lastLogTime = Date.now();
 
             /**
              * requestAnimationFrame을 이용한 렌더링 루프
              */
             function render() {
-                if (!renderingActive) return;
+                if (!renderingActive) {
+                    console.log('[TV] 렌더링 중지됨');
+                    return;
+                }
+
+                frameCount++;
+
+                // 5초마다 상태 로그
+                if (Date.now() - lastLogTime > 5000) {
+                    console.log(`[TV] 렌더링 중... (프레임: ${frameCount}, readyState: ${videoElement.readyState})`);
+                    console.log(`[TV] 비디오 크기: ${videoElement.videoWidth}x${videoElement.videoHeight}`);
+                    lastLogTime = Date.now();
+                }
 
                 // 비디오가 재생 가능한 상태인지 확인
                 if (videoElement.readyState === videoElement.HAVE_ENOUGH_DATA) {
+                    // 첫 프레임 로그
+                    if (frameCount === 1) {
+                        console.log('[TV] 첫 프레임 렌더링!');
+                        console.log('[TV] 비디오 크기:', videoElement.videoWidth, 'x', videoElement.videoHeight);
+                    }
+
+                    // 비디오 크기가 0이면 문제
+                    if (videoElement.videoWidth === 0 || videoElement.videoHeight === 0) {
+                        console.warn('[TV] 비디오 크기가 0입니다. 대기 중...');
+                        requestAnimationFrame(render);
+                        return;
+                    }
+
                     // Aspect ratio를 유지하며 Canvas에 맞게 스케일 계산
                     const videoAspect = videoElement.videoWidth / videoElement.videoHeight;
                     const canvasAspect = canvas.width / canvas.height;
@@ -455,6 +486,11 @@
 
                     // 비디오 프레임 그리기
                     ctx.drawImage(videoElement, x, y, drawWidth, drawHeight);
+                } else {
+                    // 데이터 대기 중
+                    if (frameCount % 100 === 0) {
+                        console.log(`[TV] 비디오 데이터 대기 중... (readyState: ${videoElement.readyState})`);
+                    }
                 }
 
                 // 다음 프레임 요청
@@ -463,7 +499,7 @@
 
             // 렌더링 시작
             render();
-            console.log('[TV] Canvas 렌더링 시작');
+            console.log('[TV] Canvas 렌더링 루프 시작');
         }
 
         /**
