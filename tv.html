@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TV - 인터랙티브 학습 게임</title>
+    <style>
+        /* 전체 페이지 스타일: 스크롤 없이 전체 화면 사용 */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Nunito', 'Comic Sans MS', sans-serif;
+            overflow: hidden; /* 스크롤바 숨김 */
+            width: 100vw;
+            height: 100vh;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        /* 연결 대기 화면 스타일 */
+        #connectionScreen {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            text-align: center;
+            color: white;
+        }
+
+        #connectionScreen h1 {
+            font-size: 64px;
+            font-weight: bold;
+            margin-bottom: 40px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        /* 연결 코드 표시 영역 */
+        #connectionCodeBox {
+            background: white;
+            border-radius: 30px;
+            padding: 40px 80px;
+            margin-bottom: 40px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        /* 연결 코드 텍스트 */
+        #connectionCode {
+            font-family: 'Poppins', 'Arial Black', sans-serif;
+            font-size: 120px;
+            font-weight: bold;
+            color: #FF6B6B;
+            letter-spacing: 0.2em;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        #connectionScreen p {
+            font-size: 36px;
+            margin-bottom: 30px;
+            opacity: 0.9;
+        }
+
+        /* 상태 메시지 */
+        #statusMessage {
+            font-size: 32px;
+            padding: 15px 30px;
+            border-radius: 20px;
+            background: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
+        }
+
+        /* Pulse 애니메이션 */
+        @keyframes pulse {
+            0%, 100% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.05);
+            }
+        }
+
+        /* 영상 표시 화면 스타일 */
+        #videoScreen {
+            display: none;
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+            background: #000;
+        }
+
+        /* 영상을 표시할 Canvas */
+        #displayCanvas {
+            width: 100%;
+            height: 100%;
+            object-fit: contain; /* 비율 유지하며 화면에 맞춤 */
+        }
+
+        /* 연결 상태 인디케이터 */
+        #connectedStatus {
+            position: absolute;
+            top: 30px;
+            right: 30px;
+            background: rgba(149, 225, 211, 0.9);
+            color: white;
+            padding: 15px 30px;
+            border-radius: 30px;
+            font-size: 28px;
+            font-weight: bold;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+            animation: statusPulse 2s ease-in-out infinite;
+        }
+
+        /* 상태 인디케이터 pulse 효과 */
+        @keyframes statusPulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.7;
+            }
+        }
+
+        /* 재연결 중 상태 */
+        .reconnecting {
+            background: rgba(255, 230, 109, 0.9) !important;
+        }
+
+        /* 에러 상태 */
+        .error {
+            background: rgba(243, 129, 129, 0.9) !important;
+        }
+    </style>
+</head>
+<body>
+    <!-- 연결 대기 화면 -->
+    <div id="connectionScreen">
+        <h1>스마트폰을 연결하세요</h1>
+        <div id="connectionCodeBox">
+            <div id="connectionCode">------</div>
+        </div>
+        <p>스마트폰에서 이 코드를 입력하세요</p>
+        <div id="statusMessage">연결을 기다리고 있습니다...</div>
+    </div>
+
+    <!-- 영상 표시 화면 -->
+    <div id="videoScreen">
+        <canvas id="displayCanvas"></canvas>
+        <div id="connectedStatus">연결됨</div>
+    </div>
+
+    <!-- PeerJS 라이브러리 로드 -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+
+    <script>
+        // ========================================
+        // 1. 전역 변수 및 설정
+        // ========================================
+
+        /**
+         * PeerJS 설정
+         * - PeerJS 공개 signaling 서버 사용 (무료)
+         * - STUN 서버로 Google STUN 사용 (NAT traversal을 위함)
+         */
+        const PEER_CONFIG = {
+            host: '0.peerjs.com',
+            port: 443,
+            path: '/',
+            secure: true,
+            config: {
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' }
+                ]
+            }
+        };
+
+        // 재연결 설정
+        const MAX_RECONNECT_ATTEMPTS = 10; // 최대 재연결 시도 횟수
+        const BASE_RECONNECT_DELAY = 1000; // 기본 재연결 지연 시간 (1초)
+        const MAX_RECONNECT_DELAY = 16000; // 최대 재연결 지연 시간 (16초)
+
+        // 전역 상태 변수
+        let peer = null;                    // PeerJS 인스턴스
+        let connectionCode = '';            // 6자리 연결 코드
+        let peerId = '';                    // TV의 Peer ID (tv-{code} 형식)
+        let currentConnection = null;       // 현재 데이터 연결
+        let currentCall = null;             // 현재 미디어 연결
+        let videoStream = null;             // 수신한 영상 스트림
+        let reconnectAttempts = 0;          // 재연결 시도 횟수
+        let reconnectTimer = null;          // 재연결 타이머
+        let renderingActive = false;        // 렌더링 활성화 상태
+
+        // DOM 요소 참조
+        const connectionScreen = document.getElementById('connectionScreen');
+        const videoScreen = document.getElementById('videoScreen');
+        const connectionCodeElement = document.getElementById('connectionCode');
+        const statusMessageElement = document.getElementById('statusMessage');
+        const displayCanvas = document.getElementById('displayCanvas');
+        const connectedStatusElement = document.getElementById('connectedStatus');
+
+        // ========================================
+        // 2. PeerJS 초기화 및 연결 코드 생성
+        // ========================================
+
+        /**
+         * 6자리 랜덤 연결 코드 생성
+         * @returns {string} 100000-999999 범위의 6자리 숫자 문자열
+         */
+        function generateConnectionCode() {
+            return Math.floor(100000 + Math.random() * 900000).toString();
+        }
+
+        /**
+         * PeerJS 초기화
+         * TV의 Peer ID를 tv-{6자리코드} 형식으로 생성하여 PeerJS 인스턴스를 초기화합니다.
+         */
+        function initializePeer() {
+            // 6자리 연결 코드 생성
+            connectionCode = generateConnectionCode();
+            peerId = `tv-${connectionCode}`;
+
+            // 화면에 코드 표시
+            connectionCodeElement.textContent = connectionCode;
+            console.log(`[TV] Peer ID: ${peerId}`);
+
+            try {
+                // PeerJS 인스턴스 생성
+                peer = new Peer(peerId, PEER_CONFIG);
+
+                // Peer 이벤트 리스너 설정
+                setupPeerEventListeners();
+            } catch (error) {
+                console.error('[TV] PeerJS 초기화 실패:', error);
+                updateStatus('초기화 실패. 페이지를 새로고침하세요.', 'error');
+            }
+        }
+
+        /**
+         * PeerJS 이벤트 리스너 설정
+         */
+        function setupPeerEventListeners() {
+            // Peer 연결 성공 (Signaling 서버에 연결됨)
+            peer.on('open', (id) => {
+                console.log('[TV] PeerJS 연결 성공. Peer ID:', id);
+                updateStatus('연결을 기다리고 있습니다...');
+            });
+
+            // 들어오는 데이터 연결 처리
+            peer.on('connection', (conn) => {
+                console.log('[TV] 데이터 연결 수신:', conn.peer);
+                currentConnection = conn;
+                setupConnectionHandlers(conn);
+            });
+
+            // 들어오는 미디어 연결 (영상 스트림) 처리
+            peer.on('call', (call) => {
+                console.log('[TV] 미디어 연결 수신:', call.peer);
+                currentCall = call;
+
+                // 미디어 연결 수락 (TV는 영상을 받기만 하므로 응답 스트림 없음)
+                call.answer();
+
+                // 원격 스트림 수신 이벤트
+                call.on('stream', (remoteStream) => {
+                    console.log('[TV] 영상 스트림 수신');
+                    handleIncomingStream(remoteStream);
+                    reconnectAttempts = 0; // 성공적으로 연결되면 재연결 카운터 리셋
+                });
+
+                // 미디어 연결 종료 이벤트
+                call.on('close', () => {
+                    console.log('[TV] 미디어 연결 종료');
+                    handleDisconnection();
+                });
+
+                // 미디어 연결 에러
+                call.on('error', (error) => {
+                    console.error('[TV] 미디어 연결 에러:', error);
+                    handleDisconnection();
+                });
+            });
+
+            // Peer 에러 처리
+            peer.on('error', (error) => {
+                console.error('[TV] PeerJS 에러:', error);
+                handlePeerError(error);
+            });
+
+            // Peer 연결 끊김
+            peer.on('disconnected', () => {
+                console.log('[TV] Peer 연결 끊김');
+                handleDisconnection();
+            });
+
+            // Peer 종료
+            peer.on('close', () => {
+                console.log('[TV] Peer 종료');
+                handleDisconnection();
+            });
+        }
+
+        // ========================================
+        // 3. 연결 관리
+        // ========================================
+
+        /**
+         * 데이터 연결 핸들러 설정
+         * @param {DataConnection} conn - PeerJS 데이터 연결 객체
+         */
+        function setupConnectionHandlers(conn) {
+            // 연결 성공
+            conn.on('open', () => {
+                console.log('[TV] 데이터 연결 성공');
+                updateStatus('스마트폰 연결됨!');
+            });
+
+            // 데이터 수신 (heartbeat 등)
+            conn.on('data', (data) => {
+                console.log('[TV] 데이터 수신:', data);
+
+                // Ping에 대한 Pong 응답
+                if (data.type === 'ping') {
+                    conn.send({ type: 'pong', timestamp: data.timestamp });
+                }
+            });
+
+            // 데이터 연결 종료
+            conn.on('close', () => {
+                console.log('[TV] 데이터 연결 종료');
+                handleDisconnection();
+            });
+
+            // 데이터 연결 에러
+            conn.on('error', (error) => {
+                console.error('[TV] 데이터 연결 에러:', error);
+            });
+        }
+
+        /**
+         * PeerJS 에러 처리
+         * @param {Error} error - PeerJS 에러 객체
+         */
+        function handlePeerError(error) {
+            const errorType = error.type;
+            let message = '연결 오류가 발생했습니다.';
+
+            switch (errorType) {
+                case 'peer-unavailable':
+                    message = '스마트폰을 찾을 수 없습니다.';
+                    break;
+                case 'network':
+                    message = '네트워크 오류. 재연결 시도 중...';
+                    attemptReconnection();
+                    return;
+                case 'browser-incompatible':
+                    message = '브라우저가 지원되지 않습니다. Chrome을 사용하세요.';
+                    break;
+                case 'invalid-id':
+                    message = '잘못된 연결 코드입니다.';
+                    break;
+                case 'server-error':
+                    message = '서버 오류. 잠시 후 다시 시도하세요.';
+                    break;
+                case 'socket-error':
+                case 'socket-closed':
+                    message = '연결이 끊어졌습니다. 재연결 시도 중...';
+                    attemptReconnection();
+                    return;
+            }
+
+            updateStatus(message, 'error');
+        }
+
+        // ========================================
+        // 4. 영상 스트림 처리 및 렌더링
+        // ========================================
+
+        /**
+         * 수신한 영상 스트림 처리
+         * @param {MediaStream} stream - 수신한 미디어 스트림
+         */
+        function handleIncomingStream(stream) {
+            videoStream = stream;
+
+            // 숨겨진 비디오 엘리먼트 생성
+            const videoElement = document.createElement('video');
+            videoElement.srcObject = stream;
+            videoElement.autoplay = true;
+            videoElement.playsInline = true;
+            videoElement.muted = true;
+
+            // 비디오 메타데이터 로드 완료 후 렌더링 시작
+            videoElement.onloadedmetadata = () => {
+                console.log('[TV] 비디오 메타데이터 로드 완료');
+                videoElement.play();
+                startCanvasRendering(videoElement);
+                showVideoScreen();
+            };
+        }
+
+        /**
+         * Canvas에 영상 렌더링 시작
+         * @param {HTMLVideoElement} videoElement - 렌더링할 비디오 엘리먼트
+         */
+        function startCanvasRendering(videoElement) {
+            const canvas = displayCanvas;
+            const ctx = canvas.getContext('2d', { alpha: false });
+
+            // Canvas를 전체 화면 크기로 설정
+            function resizeCanvas() {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+            }
+            resizeCanvas();
+
+            // 창 크기 변경 시 Canvas 크기 조정
+            window.addEventListener('resize', resizeCanvas);
+
+            renderingActive = true;
+
+            /**
+             * requestAnimationFrame을 이용한 렌더링 루프
+             */
+            function render() {
+                if (!renderingActive) return;
+
+                // 비디오가 재생 가능한 상태인지 확인
+                if (videoElement.readyState === videoElement.HAVE_ENOUGH_DATA) {
+                    // Aspect ratio를 유지하며 Canvas에 맞게 스케일 계산
+                    const videoAspect = videoElement.videoWidth / videoElement.videoHeight;
+                    const canvasAspect = canvas.width / canvas.height;
+
+                    let drawWidth, drawHeight, x, y;
+
+                    if (canvasAspect > videoAspect) {
+                        // Canvas가 더 넓음 - 높이를 맞추고 좌우 여백
+                        drawHeight = canvas.height;
+                        drawWidth = drawHeight * videoAspect;
+                        x = (canvas.width - drawWidth) / 2;
+                        y = 0;
+                    } else {
+                        // Canvas가 더 높음 - 너비를 맞추고 상하 여백
+                        drawWidth = canvas.width;
+                        drawHeight = drawWidth / videoAspect;
+                        x = 0;
+                        y = (canvas.height - drawHeight) / 2;
+                    }
+
+                    // Canvas 클리어 (검은 배경)
+                    ctx.fillStyle = '#000000';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                    // 비디오 프레임 그리기
+                    ctx.drawImage(videoElement, x, y, drawWidth, drawHeight);
+                }
+
+                // 다음 프레임 요청
+                requestAnimationFrame(render);
+            }
+
+            // 렌더링 시작
+            render();
+            console.log('[TV] Canvas 렌더링 시작');
+        }
+
+        /**
+         * 영상 화면 표시 (연결 화면 숨김)
+         */
+        function showVideoScreen() {
+            connectionScreen.style.display = 'none';
+            videoScreen.style.display = 'block';
+            connectedStatusElement.textContent = '연결됨';
+            connectedStatusElement.className = '';
+        }
+
+        /**
+         * 연결 화면 표시 (영상 화면 숨김)
+         */
+        function showConnectionScreen() {
+            videoScreen.style.display = 'none';
+            connectionScreen.style.display = 'flex';
+            renderingActive = false;
+        }
+
+        // ========================================
+        // 5. 연결 해제 및 재연결 로직
+        // ========================================
+
+        /**
+         * 연결 해제 처리
+         */
+        function handleDisconnection() {
+            console.log('[TV] 연결 해제 처리');
+
+            // 영상 렌더링 중지
+            renderingActive = false;
+
+            // 스트림 정리
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+                videoStream = null;
+            }
+
+            // 연결 화면으로 전환
+            showConnectionScreen();
+
+            // 재연결 시도
+            attemptReconnection();
+        }
+
+        /**
+         * 자동 재연결 시도
+         * Exponential backoff 방식 사용: 1초 → 2초 → 4초 → 8초 → 16초 (최대)
+         */
+        function attemptReconnection() {
+            // 재연결 타이머가 이미 있으면 취소
+            if (reconnectTimer) {
+                clearTimeout(reconnectTimer);
+            }
+
+            // 최대 재시도 횟수 초과
+            if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+                updateStatus(`재연결 실패. 페이지를 새로고침하세요. (${MAX_RECONNECT_ATTEMPTS}회 시도함)`, 'error');
+                return;
+            }
+
+            reconnectAttempts++;
+
+            // Exponential backoff 계산
+            const delay = Math.min(
+                BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts - 1),
+                MAX_RECONNECT_DELAY
+            );
+
+            updateStatus(
+                `재연결 중... (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}) - ${Math.ceil(delay / 1000)}초 후 재시도`,
+                'reconnecting'
+            );
+
+            reconnectTimer = setTimeout(() => {
+                console.log(`[TV] 재연결 시도 ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}`);
+
+                // Peer가 연결 끊김 상태이면 재연결
+                if (peer && peer.disconnected) {
+                    peer.reconnect();
+                }
+            }, delay);
+        }
+
+        // ========================================
+        // 6. UI 업데이트 함수
+        // ========================================
+
+        /**
+         * 상태 메시지 업데이트
+         * @param {string} message - 표시할 메시지
+         * @param {string} type - 상태 타입 ('normal', 'reconnecting', 'error')
+         */
+        function updateStatus(message, type = 'normal') {
+            statusMessageElement.textContent = message;
+
+            // 연결 상태 인디케이터도 업데이트 (영상 화면일 경우)
+            if (videoScreen.style.display === 'block') {
+                connectedStatusElement.textContent = message;
+                connectedStatusElement.className = type === 'reconnecting' ? 'reconnecting' :
+                                                   type === 'error' ? 'error' : '';
+            }
+
+            console.log(`[TV] 상태: ${message}`);
+        }
+
+        // ========================================
+        // 7. 리소스 정리 (페이지 종료 시)
+        // ========================================
+
+        /**
+         * 페이지 종료 시 모든 리소스 정리
+         */
+        window.addEventListener('beforeunload', () => {
+            console.log('[TV] 리소스 정리');
+
+            // 렌더링 중지
+            renderingActive = false;
+
+            // 재연결 타이머 취소
+            if (reconnectTimer) {
+                clearTimeout(reconnectTimer);
+            }
+
+            // 스트림 정리
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+            }
+
+            // 연결 종료
+            if (currentCall) {
+                currentCall.close();
+            }
+            if (currentConnection) {
+                currentConnection.close();
+            }
+
+            // Peer 종료
+            if (peer) {
+                peer.destroy();
+            }
+        });
+
+        // ========================================
+        // 8. 초기화 실행
+        // ========================================
+
+        // 페이지 로드 완료 시 PeerJS 초기화
+        window.addEventListener('DOMContentLoaded', () => {
+            console.log('[TV] 애플리케이션 시작');
+            initializePeer();
+        });
+    </script>
+</body>
+</html>

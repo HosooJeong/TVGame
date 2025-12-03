@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>스마트폰 - 인터랙티브 학습 게임</title>
+    <style>
+        /* 전체 페이지 스타일 */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent; /* 모바일 탭 하이라이트 제거 */
+        }
+
+        body {
+            font-family: 'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            overflow-x: hidden;
+            color: white;
+        }
+
+        /* 공통 스타일 */
+        .screen {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .screen.active {
+            display: flex;
+        }
+
+        /* 코드 입력 화면 */
+        #connectionInputScreen {
+            justify-content: center;
+            text-align: center;
+        }
+
+        #connectionInputScreen h1 {
+            font-size: 36px;
+            font-weight: bold;
+            margin-bottom: 40px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        /* 코드 입력 필드 */
+        #codeInput {
+            width: 280px;
+            height: 60px;
+            font-size: 48px;
+            font-family: 'Courier New', monospace;
+            text-align: center;
+            letter-spacing: 0.3em;
+            border: none;
+            border-radius: 15px;
+            margin-bottom: 30px;
+            padding: 0 10px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        /* iOS에서 입력 시 자동 줌 방지 */
+        #codeInput {
+            font-size: 16px;
+            padding: 20px 10px;
+        }
+
+        #codeInput:focus {
+            outline: 3px solid #4ECDC4;
+        }
+
+        /* 연결 버튼 */
+        #connectButton {
+            width: 280px;
+            height: 50px;
+            font-size: 22px;
+            font-weight: bold;
+            background: #4ECDC4;
+            color: white;
+            border: none;
+            border-radius: 25px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+            cursor: pointer;
+            transition: transform 0.1s ease;
+            margin-bottom: 30px;
+        }
+
+        #connectButton:active {
+            transform: scale(0.95);
+        }
+
+        #connectButton:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        /* 상태 메시지 */
+        .status-message {
+            font-size: 18px;
+            padding: 15px 25px;
+            border-radius: 15px;
+            background: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
+            margin-top: 20px;
+            max-width: 90%;
+        }
+
+        /* 카메라 화면 */
+        #cameraScreen {
+            padding: 0;
+            position: relative;
+        }
+
+        /* 비디오 및 Canvas 컨테이너 */
+        .video-container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+            background: #000;
+        }
+
+        /* 숨겨진 비디오 엘리먼트 (카메라 입력용) */
+        #cameraVideo {
+            display: none;
+        }
+
+        /* 미리보기 Canvas (배경 제거된 영상 표시) */
+        #previewCanvas {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        /* 처리용 Canvas (숨김) */
+        #segmentationCanvas {
+            display: none;
+        }
+
+        /* 상태 인디케이터 */
+        #connectedStatus {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(149, 225, 211, 0.9);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 16px;
+            font-weight: bold;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+            z-index: 10;
+        }
+
+        .status-reconnecting {
+            background: rgba(255, 230, 109, 0.9) !important;
+        }
+
+        .status-error {
+            background: rgba(243, 129, 129, 0.9) !important;
+        }
+
+        /* 연결 해제 버튼 */
+        #disconnectButton {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(243, 129, 129, 0.9);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 16px;
+            font-weight: bold;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+            cursor: pointer;
+            z-index: 10;
+        }
+
+        #disconnectButton:active {
+            transform: scale(0.95);
+        }
+
+        /* 로딩 인디케이터 */
+        .loading {
+            display: none;
+            margin-top: 20px;
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid white;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <!-- 코드 입력 화면 -->
+    <div id="connectionInputScreen" class="screen active">
+        <h1>TV 코드를 입력하세요</h1>
+        <input
+            type="tel"
+            id="codeInput"
+            maxlength="6"
+            pattern="[0-9]*"
+            inputmode="numeric"
+            placeholder="000000"
+            autocomplete="off"
+        >
+        <button id="connectButton">연결하기</button>
+        <div id="statusMessage" class="status-message">코드를 입력하고 연결하세요</div>
+        <div id="loadingIndicator" class="loading">
+            <div class="spinner"></div>
+            <p style="margin-top: 10px;">초기화 중...</p>
+        </div>
+    </div>
+
+    <!-- 카메라 화면 -->
+    <div id="cameraScreen" class="screen">
+        <div class="video-container">
+            <!-- 카메라 입력 비디오 (숨김) -->
+            <video id="cameraVideo" autoplay playsinline muted></video>
+
+            <!-- 미리보기 Canvas (사용자에게 보여짐) -->
+            <canvas id="previewCanvas"></canvas>
+
+            <!-- 배경 제거 처리용 Canvas (숨김) -->
+            <canvas id="segmentationCanvas"></canvas>
+
+            <!-- 연결 상태 표시 -->
+            <div id="connectedStatus">처리 중...</div>
+
+            <!-- 연결 해제 버튼 -->
+            <button id="disconnectButton">연결 해제</button>
+        </div>
+    </div>
+
+    <!-- 외부 라이브러리 로드 -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.1.1675465747/selfie_segmentation.js" crossorigin="anonymous"></script>
+
+    <script>
+        // ========================================
+        // 1. 전역 변수 및 설정
+        // ========================================
+
+        /**
+         * 카메라 제약 조건
+         * - 후면 카메라 사용 (facingMode: 'environment')
+         * - 중품질: 640x480 해상도
+         * - 24fps 프레임 레이트
+         */
+        const CAMERA_CONSTRAINTS = {
+            video: {
+                facingMode: 'environment',  // 후면 카메라
+                width: { ideal: 640 },
+                height: { ideal: 480 },
+                frameRate: { ideal: 24, max: 24 }
+            },
+            audio: false  // 오디오 없음
+        };
+
+        /**
+         * PeerJS 설정 (TV와 동일)
+         */
+        const PEER_CONFIG = {
+            host: '0.peerjs.com',
+            port: 443,
+            path: '/',
+            secure: true,
+            config: {
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' }
+                ]
+            }
+        };
+
+        // 프레임 레이트 제어
+        const TARGET_FPS = 24;
+        const FRAME_INTERVAL = 1000 / TARGET_FPS;  // 약 41.67ms
+
+        // 재연결 설정
+        const MAX_RECONNECT_ATTEMPTS = 10;
+        const BASE_RECONNECT_DELAY = 1000;
+        const MAX_RECONNECT_DELAY = 16000;
+
+        // 전역 상태 변수
+        let peer = null;                        // PeerJS 인스턴스
+        let tvConnection = null;                // TV와의 데이터 연결
+        let mediaConnection = null;             // TV와의 미디어 연결
+        let cameraStream = null;                // 카메라 스트림
+        let selfieSegmentation = null;          // MediaPipe 인스턴스
+        let isProcessing = false;               // 프레임 처리 중 플래그
+        let lastFrameTime = 0;                  // 마지막 프레임 처리 시간
+        let processingActive = false;           // 처리 루프 활성화 상태
+        let reconnectAttempts = 0;              // 재연결 시도 횟수
+        let reconnectTimer = null;              // 재연결 타이머
+        let savedConnectionCode = '';           // 재연결용 코드 저장
+
+        // DOM 요소 참조
+        const connectionInputScreen = document.getElementById('connectionInputScreen');
+        const cameraScreen = document.getElementById('cameraScreen');
+        const codeInput = document.getElementById('codeInput');
+        const connectButton = document.getElementById('connectButton');
+        const statusMessage = document.getElementById('statusMessage');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const cameraVideo = document.getElementById('cameraVideo');
+        const previewCanvas = document.getElementById('previewCanvas');
+        const segmentationCanvas = document.getElementById('segmentationCanvas');
+        const connectedStatus = document.getElementById('connectedStatus');
+        const disconnectButton = document.getElementById('disconnectButton');
+
+        // Canvas context
+        let segmentationCtx = null;
+        let previewCtx = null;
+
+        // ========================================
+        // 2. UI 이벤트 리스너
+        // ========================================
+
+        // 연결 버튼 클릭
+        connectButton.addEventListener('click', handleConnectClick);
+
+        // 코드 입력 시 엔터키 처리
+        codeInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                handleConnectClick();
+            }
+        });
+
+        // 코드 입력 시 숫자만 허용
+        codeInput.addEventListener('input', (e) => {
+            e.target.value = e.target.value.replace(/[^0-9]/g, '');
+        });
+
+        // 연결 해제 버튼 클릭
+        disconnectButton.addEventListener('click', handleDisconnectClick);
+
+        /**
+         * 연결 버튼 클릭 핸들러
+         */
+        async function handleConnectClick() {
+            const code = codeInput.value.trim();
+
+            // 코드 유효성 검사
+            if (code.length !== 6 || !/^\d{6}$/.test(code)) {
+                updateStatusMessage('6자리 숫자 코드를 입력하세요', 'error');
+                return;
+            }
+
+            // 버튼 비활성화
+            connectButton.disabled = true;
+            codeInput.disabled = true;
+            updateStatusMessage('연결 중...', 'connecting');
+            showLoading(true);
+
+            try {
+                // 연결 코드 저장 (재연결용)
+                savedConnectionCode = code;
+
+                // 1. MediaPipe 초기화
+                await initializeMediaPipe();
+
+                // 2. 카메라 접근
+                await initializeCamera();
+
+                // 3. TV에 연결
+                await connectToTV(code);
+
+            } catch (error) {
+                console.error('[Phone] 연결 실패:', error);
+                updateStatusMessage(`연결 실패: ${error.message}`, 'error');
+                connectButton.disabled = false;
+                codeInput.disabled = false;
+                showLoading(false);
+            }
+        }
+
+        /**
+         * 연결 해제 버튼 핸들러
+         */
+        function handleDisconnectClick() {
+            cleanup();
+            showConnectionInputScreen();
+            updateStatusMessage('연결이 해제되었습니다');
+        }
+
+        // ========================================
+        // 3. MediaPipe 초기화
+        // ========================================
+
+        /**
+         * MediaPipe Selfie Segmentation 초기화
+         * - General 모델 사용 (modelSelection: 1)
+         * - 더 정확한 세그멘테이션 제공
+         */
+        async function initializeMediaPipe() {
+            console.log('[Phone] MediaPipe 초기화 시작');
+            updateStatusMessage('배경 제거 모델 로딩 중...', 'connecting');
+
+            try {
+                // MediaPipe 인스턴스 생성
+                selfieSegmentation = new SelfieSegmentation({
+                    locateFile: (file) => {
+                        return `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.1.1675465747/${file}`;
+                    }
+                });
+
+                // 모델 설정
+                await selfieSegmentation.setOptions({
+                    modelSelection: 1,      // 0: Landscape (빠름), 1: General (정확함)
+                    selfieMode: false       // 후면 카메라이므로 미러링 안 함
+                });
+
+                // 결과 처리 콜백 설정
+                selfieSegmentation.onResults(handleSegmentationResults);
+
+                // 초기화 완료
+                await selfieSegmentation.initialize();
+
+                console.log('[Phone] MediaPipe 초기화 완료');
+            } catch (error) {
+                console.error('[Phone] MediaPipe 초기화 실패:', error);
+                throw new Error('배경 제거 모델 로딩 실패. 인터넷 연결을 확인하세요.');
+            }
+        }
+
+        /**
+         * MediaPipe 세그멘테이션 결과 처리
+         * @param {Object} results - MediaPipe 결과 객체 { image, segmentationMask }
+         */
+        function handleSegmentationResults(results) {
+            if (!results || !results.segmentationMask) {
+                isProcessing = false;
+                return;
+            }
+
+            // Canvas 크기 설정 (최초 1회만)
+            if (segmentationCanvas.width !== results.image.width) {
+                segmentationCanvas.width = results.image.width;
+                segmentationCanvas.height = results.image.height;
+                previewCanvas.width = results.image.width;
+                previewCanvas.height = results.image.height;
+
+                // Context 가져오기
+                segmentationCtx = segmentationCanvas.getContext('2d', { willReadFrequently: false });
+                previewCtx = previewCanvas.getContext('2d', { willReadFrequently: false });
+            }
+
+            // 배경 제거 처리
+            segmentationCtx.save();
+            segmentationCtx.clearRect(0, 0, segmentationCanvas.width, segmentationCanvas.height);
+
+            // 세그멘테이션 마스크를 그려서 alpha로 사용
+            segmentationCtx.drawImage(results.segmentationMask, 0, 0);
+
+            // 원본 이미지와 마스크 합성 (사람만 남김)
+            segmentationCtx.globalCompositeOperation = 'source-in';
+            segmentationCtx.drawImage(results.image, 0, 0);
+
+            segmentationCtx.restore();
+
+            // 미리보기 Canvas에 결과 복사 (사용자에게 보여주기 위함)
+            previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+            previewCtx.drawImage(segmentationCanvas, 0, 0);
+
+            // 처리 완료
+            isProcessing = false;
+        }
+
+        // ========================================
+        // 4. 카메라 초기화
+        // ========================================
+
+        /**
+         * 카메라 접근 및 초기화
+         */
+        async function initializeCamera() {
+            console.log('[Phone] 카메라 접근 시작');
+            updateStatusMessage('카메라 접근 중...', 'connecting');
+
+            try {
+                // 카메라 스트림 요청
+                cameraStream = await navigator.mediaDevices.getUserMedia(CAMERA_CONSTRAINTS);
+
+                // 비디오 엘리먼트에 스트림 연결
+                cameraVideo.srcObject = cameraStream;
+
+                // 메타데이터 로드 대기
+                await new Promise((resolve, reject) => {
+                    cameraVideo.onloadedmetadata = resolve;
+                    cameraVideo.onerror = reject;
+                });
+
+                // 비디오 재생
+                await cameraVideo.play();
+
+                console.log('[Phone] 카메라 초기화 완료');
+                console.log(`[Phone] 해상도: ${cameraVideo.videoWidth}x${cameraVideo.videoHeight}`);
+
+            } catch (error) {
+                console.error('[Phone] 카메라 접근 실패:', error);
+                handleCameraError(error);
+                throw error;
+            }
+        }
+
+        /**
+         * 카메라 에러 처리
+         * @param {Error} error - 카메라 에러 객체
+         */
+        function handleCameraError(error) {
+            let message = '카메라 접근 실패';
+
+            switch (error.name) {
+                case 'NotAllowedError':
+                case 'PermissionDeniedError':
+                    message = '카메라 권한이 거부되었습니다. 설정에서 카메라 권한을 허용하세요.';
+                    break;
+                case 'NotFoundError':
+                case 'DevicesNotFoundError':
+                    message = '카메라를 찾을 수 없습니다.';
+                    break;
+                case 'NotReadableError':
+                case 'TrackStartError':
+                    message = '카메라가 다른 앱에서 사용 중입니다.';
+                    break;
+                case 'OverconstrainedError':
+                case 'ConstraintNotSatisfiedError':
+                    message = '카메라가 요구사항을 지원하지 않습니다.';
+                    break;
+                case 'SecurityError':
+                    message = '보안 설정으로 카메라를 사용할 수 없습니다. HTTPS를 사용하세요.';
+                    break;
+            }
+
+            updateStatusMessage(message, 'error');
+        }
+
+        // ========================================
+        // 5. PeerJS 연결
+        // ========================================
+
+        /**
+         * TV에 PeerJS 연결
+         * @param {string} code - 6자리 연결 코드
+         */
+        async function connectToTV(code) {
+            console.log('[Phone] TV 연결 시작');
+            updateStatusMessage('TV에 연결 중...', 'connecting');
+
+            // 고유한 Phone Peer ID 생성
+            const phonePeerId = `phone-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            const tvPeerId = `tv-${code}`;
+
+            try {
+                // PeerJS 인스턴스 생성
+                peer = new Peer(phonePeerId, PEER_CONFIG);
+
+                // Peer 이벤트 리스너 설정
+                peer.on('open', (id) => {
+                    console.log('[Phone] PeerJS 연결 성공. Peer ID:', id);
+
+                    // TV에 데이터 연결
+                    tvConnection = peer.connect(tvPeerId);
+
+                    tvConnection.on('open', () => {
+                        console.log('[Phone] TV 데이터 연결 성공');
+                        updateStatusMessage('연결됨! 영상 전송 시작...', 'connected');
+
+                        // 영상 처리 및 전송 시작
+                        startVideoProcessingAndStreaming();
+
+                        // 재연결 카운터 리셋
+                        reconnectAttempts = 0;
+                    });
+
+                    tvConnection.on('data', (data) => {
+                        // Ping에 대한 Pong 응답
+                        if (data.type === 'ping') {
+                            tvConnection.send({ type: 'pong', timestamp: data.timestamp });
+                        }
+                    });
+
+                    tvConnection.on('close', () => {
+                        console.log('[Phone] TV 데이터 연결 종료');
+                        handleDisconnection();
+                    });
+
+                    tvConnection.on('error', (error) => {
+                        console.error('[Phone] 데이터 연결 에러:', error);
+                        handleDisconnection();
+                    });
+                });
+
+                peer.on('error', (error) => {
+                    console.error('[Phone] PeerJS 에러:', error);
+                    handlePeerError(error);
+                });
+
+                peer.on('disconnected', () => {
+                    console.log('[Phone] Peer 연결 끊김');
+                    handleDisconnection();
+                });
+
+            } catch (error) {
+                console.error('[Phone] PeerJS 연결 실패:', error);
+                throw new Error('TV 연결 실패');
+            }
+        }
+
+        /**
+         * PeerJS 에러 처리
+         * @param {Error} error - PeerJS 에러 객체
+         */
+        function handlePeerError(error) {
+            let message = '연결 오류';
+
+            switch (error.type) {
+                case 'peer-unavailable':
+                    message = 'TV를 찾을 수 없습니다. 코드를 확인하세요.';
+                    showConnectionInputScreen();
+                    break;
+                case 'network':
+                    message = '네트워크 오류. 재연결 시도 중...';
+                    attemptReconnection();
+                    return;
+                case 'browser-incompatible':
+                    message = '브라우저가 지원되지 않습니다. Chrome이나 Safari를 사용하세요.';
+                    break;
+                case 'invalid-id':
+                    message = '잘못된 연결 코드입니다.';
+                    showConnectionInputScreen();
+                    break;
+                case 'server-error':
+                case 'socket-error':
+                case 'socket-closed':
+                    message = '서버 오류. 재연결 시도 중...';
+                    attemptReconnection();
+                    return;
+            }
+
+            updateStatusMessage(message, 'error');
+        }
+
+        // ========================================
+        // 6. 영상 처리 및 전송
+        // ========================================
+
+        /**
+         * 영상 처리 및 전송 시작
+         */
+        function startVideoProcessingAndStreaming() {
+            console.log('[Phone] 영상 처리 시작');
+
+            // 카메라 화면으로 전환
+            showCameraScreen();
+            updateCameraStatus('처리 중...', 'processing');
+
+            // 프레임 처리 루프 시작
+            processingActive = true;
+            processVideoFrame();
+
+            // Canvas 스트림 캡처 및 TV로 전송
+            const stream = segmentationCanvas.captureStream(TARGET_FPS);
+
+            if (stream.getVideoTracks().length === 0) {
+                console.error('[Phone] Canvas 스트림에 비디오 트랙이 없습니다');
+                updateCameraStatus('스트림 생성 실패', 'error');
+                return;
+            }
+
+            // TV에 미디어 연결 (영상 전송)
+            const tvPeerId = `tv-${savedConnectionCode}`;
+            mediaConnection = peer.call(tvPeerId, stream);
+
+            mediaConnection.on('stream', (remoteStream) => {
+                // TV는 응답 스트림을 보내지 않지만, 이벤트는 발생할 수 있음
+                console.log('[Phone] TV로부터 스트림 수신 (예상치 못함)');
+            });
+
+            mediaConnection.on('close', () => {
+                console.log('[Phone] 미디어 연결 종료');
+                handleDisconnection();
+            });
+
+            mediaConnection.on('error', (error) => {
+                console.error('[Phone] 미디어 연결 에러:', error);
+                handleDisconnection();
+            });
+
+            updateCameraStatus('전송 중', 'streaming');
+            console.log('[Phone] 영상 전송 시작');
+        }
+
+        /**
+         * 비디오 프레임 처리 루프
+         * - 24fps로 throttling
+         * - MediaPipe로 배경 제거 처리
+         */
+        function processVideoFrame(currentTime = 0) {
+            if (!processingActive) return;
+
+            // 프레임 레이트 제어 (24fps)
+            if (currentTime - lastFrameTime < FRAME_INTERVAL) {
+                requestAnimationFrame(processVideoFrame);
+                return;
+            }
+
+            // 동시 처리 방지
+            if (isProcessing) {
+                requestAnimationFrame(processVideoFrame);
+                return;
+            }
+
+            // 비디오가 준비되지 않았으면 대기
+            if (cameraVideo.readyState !== cameraVideo.HAVE_ENOUGH_DATA) {
+                requestAnimationFrame(processVideoFrame);
+                return;
+            }
+
+            isProcessing = true;
+            lastFrameTime = currentTime;
+
+            // MediaPipe로 프레임 전송
+            selfieSegmentation.send({ image: cameraVideo })
+                .catch((error) => {
+                    console.error('[Phone] 프레임 처리 에러:', error);
+                    isProcessing = false;
+                });
+
+            // 다음 프레임 요청
+            requestAnimationFrame(processVideoFrame);
+        }
+
+        // ========================================
+        // 7. 연결 해제 및 재연결
+        // ========================================
+
+        /**
+         * 연결 해제 처리
+         */
+        function handleDisconnection() {
+            console.log('[Phone] 연결 해제 처리');
+
+            updateCameraStatus('연결 끊김', 'disconnected');
+
+            // 재연결 시도
+            attemptReconnection();
+        }
+
+        /**
+         * 자동 재연결 시도
+         */
+        function attemptReconnection() {
+            // 재연결 타이머가 이미 있으면 취소
+            if (reconnectTimer) {
+                clearTimeout(reconnectTimer);
+            }
+
+            // 최대 재시도 횟수 초과
+            if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+                updateCameraStatus(`재연결 실패 (${MAX_RECONNECT_ATTEMPTS}회 시도)`, 'error');
+                setTimeout(() => {
+                    cleanup();
+                    showConnectionInputScreen();
+                    updateStatusMessage('재연결에 실패했습니다. 다시 연결하세요.', 'error');
+                }, 3000);
+                return;
+            }
+
+            reconnectAttempts++;
+
+            // Exponential backoff 계산
+            const delay = Math.min(
+                BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts - 1),
+                MAX_RECONNECT_DELAY
+            );
+
+            updateCameraStatus(
+                `재연결 중... (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}) - ${Math.ceil(delay / 1000)}초 후`,
+                'reconnecting'
+            );
+
+            reconnectTimer = setTimeout(async () => {
+                console.log(`[Phone] 재연결 시도 ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}`);
+
+                try {
+                    // 기존 연결 정리
+                    if (mediaConnection) {
+                        mediaConnection.close();
+                    }
+                    if (tvConnection) {
+                        tvConnection.close();
+                    }
+                    if (peer && !peer.destroyed) {
+                        peer.destroy();
+                    }
+
+                    // TV에 재연결
+                    await connectToTV(savedConnectionCode);
+
+                } catch (error) {
+                    console.error('[Phone] 재연결 실패:', error);
+                    // 다음 재시도로 계속
+                    handleDisconnection();
+                }
+            }, delay);
+        }
+
+        // ========================================
+        // 8. UI 제어 함수
+        // ========================================
+
+        /**
+         * 연결 입력 화면 표시
+         */
+        function showConnectionInputScreen() {
+            connectionInputScreen.classList.add('active');
+            cameraScreen.classList.remove('active');
+            connectButton.disabled = false;
+            codeInput.disabled = false;
+            showLoading(false);
+        }
+
+        /**
+         * 카메라 화면 표시
+         */
+        function showCameraScreen() {
+            connectionInputScreen.classList.remove('active');
+            cameraScreen.classList.add('active');
+            showLoading(false);
+        }
+
+        /**
+         * 상태 메시지 업데이트
+         * @param {string} message - 메시지
+         * @param {string} type - 타입 ('normal', 'connecting', 'error')
+         */
+        function updateStatusMessage(message, type = 'normal') {
+            statusMessage.textContent = message;
+            console.log(`[Phone] 상태: ${message}`);
+        }
+
+        /**
+         * 카메라 화면 상태 업데이트
+         * @param {string} message - 메시지
+         * @param {string} type - 타입
+         */
+        function updateCameraStatus(message, type = 'normal') {
+            connectedStatus.textContent = message;
+            connectedStatus.className = '';
+
+            if (type === 'reconnecting') {
+                connectedStatus.classList.add('status-reconnecting');
+            } else if (type === 'error' || type === 'disconnected') {
+                connectedStatus.classList.add('status-error');
+            }
+
+            console.log(`[Phone] 카메라 상태: ${message}`);
+        }
+
+        /**
+         * 로딩 인디케이터 표시/숨김
+         * @param {boolean} show - 표시 여부
+         */
+        function showLoading(show) {
+            if (show) {
+                loadingIndicator.classList.add('active');
+            } else {
+                loadingIndicator.classList.remove('active');
+            }
+        }
+
+        // ========================================
+        // 9. 리소스 정리
+        // ========================================
+
+        /**
+         * 모든 리소스 정리
+         */
+        function cleanup() {
+            console.log('[Phone] 리소스 정리');
+
+            // 처리 루프 중지
+            processingActive = false;
+
+            // 재연결 타이머 취소
+            if (reconnectTimer) {
+                clearTimeout(reconnectTimer);
+                reconnectTimer = null;
+            }
+
+            // 카메라 스트림 중지
+            if (cameraStream) {
+                cameraStream.getTracks().forEach(track => track.stop());
+                cameraStream = null;
+            }
+
+            // PeerJS 연결 종료
+            if (mediaConnection) {
+                mediaConnection.close();
+                mediaConnection = null;
+            }
+            if (tvConnection) {
+                tvConnection.close();
+                tvConnection = null;
+            }
+            if (peer && !peer.destroyed) {
+                peer.destroy();
+                peer = null;
+            }
+
+            // MediaPipe 정리
+            if (selfieSegmentation) {
+                selfieSegmentation.close();
+                selfieSegmentation = null;
+            }
+
+            // Canvas 클리어
+            if (segmentationCtx) {
+                segmentationCtx.clearRect(0, 0, segmentationCanvas.width, segmentationCanvas.height);
+            }
+            if (previewCtx) {
+                previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+            }
+
+            // 상태 리셋
+            reconnectAttempts = 0;
+        }
+
+        // 페이지 종료 시 리소스 정리
+        window.addEventListener('beforeunload', cleanup);
+
+        // ========================================
+        // 10. 초기화
+        // ========================================
+
+        console.log('[Phone] 애플리케이션 시작');
+
+        // 브라우저 호환성 체크
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            updateStatusMessage('이 브라우저는 카메라를 지원하지 않습니다.', 'error');
+            connectButton.disabled = true;
+        }
+
+        if (!window.Peer) {
+            updateStatusMessage('PeerJS 로딩 실패. 인터넷 연결을 확인하세요.', 'error');
+            connectButton.disabled = true;
+        }
+    </script>
+</body>
+</html>
