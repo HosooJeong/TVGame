@@ -703,37 +703,19 @@
                 // Peer 이벤트 리스너 설정
                 peer.on('open', (id) => {
                     console.log('[Phone] PeerJS 연결 성공. Peer ID:', id);
+                    console.log('[Phone] TV Peer ID:', tvPeerId);
 
-                    // TV에 데이터 연결
-                    tvConnection = peer.connect(tvPeerId);
+                    // 데이터 연결은 건너뛰고 바로 미디어 연결만 시도
+                    // (데이터 연결의 negotiation-failed 문제 회피)
+                    console.log('[Phone] 미디어 연결만 사용 (데이터 연결 건너뛰기)');
 
-                    tvConnection.on('open', () => {
-                        console.log('[Phone] TV 데이터 연결 성공');
-                        updateStatusMessage('연결됨! 영상 전송 시작...', 'connected');
+                    updateStatusMessage('연결됨! 영상 전송 준비 중...', 'connected');
 
-                        // 영상 처리 및 전송 시작
-                        startVideoProcessingAndStreaming();
+                    // 영상 처리 및 전송 시작
+                    startVideoProcessingAndStreaming();
 
-                        // 재연결 카운터 리셋
-                        reconnectAttempts = 0;
-                    });
-
-                    tvConnection.on('data', (data) => {
-                        // Ping에 대한 Pong 응답
-                        if (data.type === 'ping') {
-                            tvConnection.send({ type: 'pong', timestamp: data.timestamp });
-                        }
-                    });
-
-                    tvConnection.on('close', () => {
-                        console.log('[Phone] TV 데이터 연결 종료');
-                        handleDisconnection();
-                    });
-
-                    tvConnection.on('error', (error) => {
-                        console.error('[Phone] 데이터 연결 에러:', error);
-                        handleDisconnection();
-                    });
+                    // 재연결 카운터 리셋
+                    reconnectAttempts = 0;
                 });
 
                 peer.on('error', (error) => {
@@ -974,9 +956,6 @@
                     if (mediaConnection) {
                         mediaConnection.close();
                     }
-                    if (tvConnection) {
-                        tvConnection.close();
-                    }
                     if (peer && !peer.destroyed) {
                         peer.destroy();
                     }
@@ -1081,14 +1060,10 @@
                 cameraStream = null;
             }
 
-            // PeerJS 연결 종료
+            // PeerJS 연결 종료 (미디어 연결만 사용)
             if (mediaConnection) {
                 mediaConnection.close();
                 mediaConnection = null;
-            }
-            if (tvConnection) {
-                tvConnection.close();
-                tvConnection = null;
             }
             if (peer && !peer.destroyed) {
                 peer.destroy();

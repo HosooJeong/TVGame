@@ -184,7 +184,6 @@
         let peer = null;                    // PeerJS 인스턴스
         let connectionCode = '';            // 6자리 연결 코드
         let peerId = '';                    // TV의 Peer ID (tv-{code} 형식)
-        let currentConnection = null;       // 현재 데이터 연결
         let currentCall = null;             // 현재 미디어 연결
         let videoStream = null;             // 수신한 영상 스트림
         let reconnectAttempts = 0;          // 재연결 시도 횟수
@@ -246,14 +245,8 @@
                 updateStatus('연결을 기다리고 있습니다...');
             });
 
-            // 들어오는 데이터 연결 처리
-            peer.on('connection', (conn) => {
-                console.log('[TV] 데이터 연결 수신:', conn.peer);
-                currentConnection = conn;
-                setupConnectionHandlers(conn);
-            });
-
             // 들어오는 미디어 연결 (영상 스트림) 처리
+            // 데이터 연결은 사용하지 않고 미디어 연결만 사용
             peer.on('call', (call) => {
                 console.log('[TV] 미디어 연결 수신:', call.peer);
                 currentCall = call;
@@ -303,39 +296,7 @@
         // ========================================
         // 3. 연결 관리
         // ========================================
-
-        /**
-         * 데이터 연결 핸들러 설정
-         * @param {DataConnection} conn - PeerJS 데이터 연결 객체
-         */
-        function setupConnectionHandlers(conn) {
-            // 연결 성공
-            conn.on('open', () => {
-                console.log('[TV] 데이터 연결 성공');
-                updateStatus('스마트폰 연결됨!');
-            });
-
-            // 데이터 수신 (heartbeat 등)
-            conn.on('data', (data) => {
-                console.log('[TV] 데이터 수신:', data);
-
-                // Ping에 대한 Pong 응답
-                if (data.type === 'ping') {
-                    conn.send({ type: 'pong', timestamp: data.timestamp });
-                }
-            });
-
-            // 데이터 연결 종료
-            conn.on('close', () => {
-                console.log('[TV] 데이터 연결 종료');
-                handleDisconnection();
-            });
-
-            // 데이터 연결 에러
-            conn.on('error', (error) => {
-                console.error('[TV] 데이터 연결 에러:', error);
-            });
-        }
+        // 데이터 연결 대신 미디어 연결만 사용하므로 별도 핸들러 불필요
 
         /**
          * PeerJS 에러 처리
@@ -593,12 +554,9 @@
                 videoStream.getTracks().forEach(track => track.stop());
             }
 
-            // 연결 종료
+            // 연결 종료 (미디어 연결만 사용)
             if (currentCall) {
                 currentCall.close();
-            }
-            if (currentConnection) {
-                currentConnection.close();
             }
 
             // Peer 종료
