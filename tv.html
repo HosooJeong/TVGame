@@ -371,22 +371,27 @@
 
             console.log('[TV] 비디오 엘리먼트 생성 및 스트림 연결 완료');
 
-            // 비디오 메타데이터 로드 완료 후 렌더링 시작
-            videoElement.onloadedmetadata = () => {
-                console.log('[TV] 비디오 메타데이터 로드 완료');
-                console.log('[TV] 비디오 크기:', videoElement.videoWidth, 'x', videoElement.videoHeight);
+            // Canvas captureStream()은 메타데이터 이벤트를 발생시키지 않을 수 있으므로
+            // 바로 재생 시작
+            console.log('[TV] 비디오 재생 시작 (메타데이터 대기 안 함)');
 
-                // play() 호출
-                videoElement.play()
-                    .then(() => {
-                        console.log('[TV] 비디오 재생 시작 성공');
-                        startCanvasRendering(videoElement);
-                        showVideoScreen();
-                    })
-                    .catch((error) => {
-                        console.error('[TV] 비디오 재생 실패:', error);
-                        updateStatus('비디오 재생 실패', 'error');
-                    });
+            videoElement.play()
+                .then(() => {
+                    console.log('[TV] 비디오 재생 성공');
+                })
+                .catch((error) => {
+                    console.error('[TV] 비디오 재생 실패:', error);
+                });
+
+            // 화면 전환 및 렌더링 즉시 시작
+            showVideoScreen();
+            startCanvasRendering(videoElement);
+            console.log('[TV] Canvas 렌더링 시작');
+
+            // 메타데이터 이벤트 (발생하면 로그만)
+            videoElement.onloadedmetadata = () => {
+                console.log('[TV] 비디오 메타데이터 로드됨 (사후)');
+                console.log('[TV] 비디오 크기:', videoElement.videoWidth, 'x', videoElement.videoHeight);
             };
 
             // 에러 핸들링
@@ -394,22 +399,6 @@
                 console.error('[TV] 비디오 엘리먼트 에러:', error);
                 updateStatus('비디오 엘리먼트 에러', 'error');
             };
-
-            // 타임아웃 - 5초 내에 메타데이터가 로드되지 않으면 강제 시작
-            setTimeout(() => {
-                if (videoElement.readyState < videoElement.HAVE_METADATA) {
-                    console.warn('[TV] 메타데이터 로드 타임아웃. 강제로 재생 시도');
-                    videoElement.play()
-                        .then(() => {
-                            console.log('[TV] 강제 재생 성공');
-                            startCanvasRendering(videoElement);
-                            showVideoScreen();
-                        })
-                        .catch((error) => {
-                            console.error('[TV] 강제 재생 실패:', error);
-                        });
-                }
-            }, 5000);
         }
 
         /**
