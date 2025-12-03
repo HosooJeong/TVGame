@@ -207,6 +207,58 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+
+        /* 디버그 로그 패널 */
+        #debugLog {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            max-height: 200px;
+            overflow-y: auto;
+            background: rgba(0, 0, 0, 0.9);
+            color: #0f0;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            padding: 10px;
+            z-index: 9999;
+            display: none;
+        }
+
+        #debugLog.active {
+            display: block;
+        }
+
+        #debugLog .log-entry {
+            margin: 2px 0;
+            word-break: break-all;
+        }
+
+        #debugLog .log-error {
+            color: #f00;
+        }
+
+        #debugLog .log-success {
+            color: #0f0;
+        }
+
+        #debugLog .log-info {
+            color: #0ff;
+        }
+
+        #debugToggle {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            border: 2px solid #0f0;
+            padding: 10px 15px;
+            border-radius: 5px;
+            font-size: 12px;
+            z-index: 10000;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
@@ -249,6 +301,10 @@
             <button id="disconnectButton">연결 해제</button>
         </div>
     </div>
+
+    <!-- 디버그 로그 패널 -->
+    <div id="debugLog"></div>
+    <button id="debugToggle">디버그 로그</button>
 
     <!-- 외부 라이브러리 로드 -->
     <!-- PeerJS는 로컬 파일 사용 (추적 방지 문제 해결) -->
@@ -327,6 +383,79 @@
         // Canvas context
         let segmentationCtx = null;
         let previewCtx = null;
+
+        // 디버그 로그
+        const debugLogElement = document.getElementById('debugLog');
+        const debugToggleButton = document.getElementById('debugToggle');
+        let debugLogVisible = true; // 기본적으로 표시
+
+        // ========================================
+        // 디버그 로그 기능
+        // ========================================
+
+        /**
+         * 화면에 디버그 로그 표시
+         */
+        function addDebugLog(message, type = 'info') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            const timestamp = new Date().toLocaleTimeString();
+            entry.textContent = `[${timestamp}] ${message}`;
+            debugLogElement.appendChild(entry);
+
+            // 자동 스크롤
+            debugLogElement.scrollTop = debugLogElement.scrollHeight;
+
+            // 최대 100개 로그만 유지
+            if (debugLogElement.children.length > 100) {
+                debugLogElement.removeChild(debugLogElement.firstChild);
+            }
+        }
+
+        // 디버그 토글 버튼
+        debugToggleButton.addEventListener('click', () => {
+            debugLogVisible = !debugLogVisible;
+            if (debugLogVisible) {
+                debugLogElement.classList.add('active');
+                debugToggleButton.textContent = '로그 숨기기';
+            } else {
+                debugLogElement.classList.remove('active');
+                debugToggleButton.textContent = '디버그 로그';
+            }
+        });
+
+        // 기본적으로 로그 표시
+        debugLogElement.classList.add('active');
+        debugToggleButton.textContent = '로그 숨기기';
+
+        // console.log, console.error 오버라이드
+        const originalLog = console.log;
+        const originalError = console.error;
+
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            const message = args.map(arg =>
+                typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
+            ).join(' ');
+
+            if (message.includes('[Phone]')) {
+                if (message.includes('실패') || message.includes('에러') || message.includes('오류')) {
+                    addDebugLog(message, 'error');
+                } else if (message.includes('성공') || message.includes('완료')) {
+                    addDebugLog(message, 'success');
+                } else {
+                    addDebugLog(message, 'info');
+                }
+            }
+        };
+
+        console.error = function(...args) {
+            originalError.apply(console, args);
+            const message = args.map(arg =>
+                typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
+            ).join(' ');
+            addDebugLog('ERROR: ' + message, 'error');
+        };
 
         // ========================================
         // 2. UI 이벤트 리스너
@@ -991,18 +1120,34 @@
         // 10. 초기화
         // ========================================
 
+        // 시작 로그 (디버그 패널 우선 초기화되므로 표시됨)
         console.log('[Phone] 애플리케이션 시작');
+        console.log('[Phone] 브라우저:', navigator.userAgent);
 
         // 브라우저 호환성 체크
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            console.error('[Phone] 카메라 API 미지원');
             updateStatusMessage('이 브라우저는 카메라를 지원하지 않습니다.', 'error');
             connectButton.disabled = true;
+        } else {
+            console.log('[Phone] 카메라 API 지원 확인 ✓');
         }
 
         if (!window.Peer) {
+            console.error('[Phone] PeerJS 로딩 실패');
             updateStatusMessage('PeerJS 로딩 실패. 인터넷 연결을 확인하세요.', 'error');
             connectButton.disabled = true;
+        } else {
+            console.log('[Phone] PeerJS 로딩 성공 ✓');
         }
+
+        if (typeof SelfieSegmentation !== 'undefined') {
+            console.log('[Phone] MediaPipe 로딩 성공 ✓');
+        } else {
+            console.log('[Phone] MediaPipe 로딩 대기 중...');
+        }
+
+        console.log('[Phone] 초기화 완료. 연결 준비됨!');
     </script>
 </body>
 </html>
