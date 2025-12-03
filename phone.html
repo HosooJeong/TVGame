@@ -667,9 +667,40 @@
         function startVideoProcessingAndStreaming() {
             console.log('[Phone] 영상 처리 시작');
 
+            // 카메라와 MediaPipe가 준비되었는지 확인
+            if (!cameraVideo || cameraVideo.readyState !== cameraVideo.HAVE_ENOUGH_DATA) {
+                console.error('[Phone] 카메라가 준비되지 않았습니다');
+                updateCameraStatus('카메라 준비 중...', 'processing');
+
+                // 1초 후 재시도
+                setTimeout(startVideoProcessingAndStreaming, 1000);
+                return;
+            }
+
+            if (!selfieSegmentation) {
+                console.error('[Phone] MediaPipe가 준비되지 않았습니다');
+                updateCameraStatus('MediaPipe 준비 중...', 'processing');
+
+                // 1초 후 재시도
+                setTimeout(startVideoProcessingAndStreaming, 1000);
+                return;
+            }
+
             // 카메라 화면으로 전환
             showCameraScreen();
             updateCameraStatus('처리 중...', 'processing');
+
+            // Canvas 초기화 (크기 설정)
+            segmentationCanvas.width = cameraVideo.videoWidth;
+            segmentationCanvas.height = cameraVideo.videoHeight;
+            previewCanvas.width = cameraVideo.videoWidth;
+            previewCanvas.height = cameraVideo.videoHeight;
+
+            // Context 가져오기
+            segmentationCtx = segmentationCanvas.getContext('2d', { willReadFrequently: false });
+            previewCtx = previewCanvas.getContext('2d', { willReadFrequently: false });
+
+            console.log(`[Phone] Canvas 크기: ${segmentationCanvas.width}x${segmentationCanvas.height}`);
 
             // 프레임 처리 루프 시작
             processingActive = true;
@@ -678,15 +709,25 @@
             // Canvas 스트림 캡처 및 TV로 전송
             const stream = segmentationCanvas.captureStream(TARGET_FPS);
 
-            if (stream.getVideoTracks().length === 0) {
-                console.error('[Phone] Canvas 스트림에 비디오 트랙이 없습니다');
+            if (!stream || stream.getVideoTracks().length === 0) {
+                console.error('[Phone] Canvas 스트림 생성 실패');
                 updateCameraStatus('스트림 생성 실패', 'error');
                 return;
             }
 
+            console.log('[Phone] Canvas 스트림 생성 성공:', stream.getVideoTracks()[0].getSettings());
+
             // TV에 미디어 연결 (영상 전송)
             const tvPeerId = `tv-${savedConnectionCode}`;
+            console.log(`[Phone] TV(${tvPeerId})에 미디어 연결 시도`);
+
             mediaConnection = peer.call(tvPeerId, stream);
+
+            if (!mediaConnection) {
+                console.error('[Phone] 미디어 연결 생성 실패');
+                updateCameraStatus('미디어 연결 실패', 'error');
+                return;
+            }
 
             mediaConnection.on('stream', (remoteStream) => {
                 // TV는 응답 스트림을 보내지 않지만, 이벤트는 발생할 수 있음
@@ -704,7 +745,7 @@
             });
 
             updateCameraStatus('전송 중', 'streaming');
-            console.log('[Phone] 영상 전송 시작');
+            console.log('[Phone] 영상 전송 시작 완료');
         }
 
         /**
